@@ -2,97 +2,164 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 
-# ================= LOAD MODEL =================
-model = joblib.load("final_model.pkl")
-
-# ================= PAGE CONFIG =================
+# ================= CONFIG =================
 st.set_page_config(page_title="Variant Dashboard", layout="wide")
 
-st.title("🧬 Variant Analysis & Prediction System")
+# ================= LOAD =================
+model = joblib.load("final_model.pkl")
 
-# ================= SIDEBAR =================
-page = st.sidebar.selectbox("Select Page", ["Dashboard", "Predict"])
-
-# ================= LOAD DATA =================
 @st.cache_data
 def load_data():
     df = pd.read_csv("final_dataset.csv")
-    df.columns = df.columns.str.strip()   # FIX for column issues
+    df.columns = df.columns.str.strip()
     return df
 
 df = load_data()
 
+# ================= HEADER =================
+st.markdown("""
+<h1 style='text-align: center; color: #4CAF50;'>
+🧬 Variant Intelligence Dashboard
+</h1>
+""", unsafe_allow_html=True)
+
+# ================= SIDEBAR =================
+page = st.sidebar.radio("Navigation", ["📊 Dashboard", "🔍 Prediction"])
+
 # ================= DASHBOARD =================
-if page == "Dashboard":
+if page == "📊 Dashboard":
 
-    st.header("📊 Data Dashboard")
+    st.markdown("## 📊 Data Insights")
 
-    # ---- 1. Label Distribution ----
-    st.subheader("Variant Classification Distribution")
+    # ---- TABS ----
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Distribution", "Feature Analysis", "Correlation", "Model Insights"
+    ])
 
-    if "label" in df.columns:
-        st.bar_chart(df["label"].value_counts())
-    else:
-        st.error("⚠️ 'label' column not found")
+    # ================= TAB 1 =================
+    with tab1:
+        col1, col2 = st.columns(2)
 
-    # ---- 2. Allele Frequency ----
-    st.subheader("Allele Frequency Distribution")
+        # Label distribution
+        with col1:
+            if "label" in df.columns:
+                fig = px.pie(
+                    df,
+                    names="label",
+                    title="Variant Classification",
+                    color_discrete_sequence=px.colors.sequential.RdBu
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-    if "Allele.Frequency" in df.columns:
-        fig, ax = plt.subplots()
-        sns.histplot(df["Allele.Frequency"], bins=30, ax=ax)
-        st.pyplot(fig)
+        # Allele frequency histogram
+        with col2:
+            fig = px.histogram(
+                df,
+                x="Allele.Frequency",
+                nbins=40,
+                title="Allele Frequency Distribution",
+                color_discrete_sequence=["#00C9A7"]
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    # ---- 3. Correlation Heatmap ----
-    st.subheader("Feature Correlation")
+    # ================= TAB 2 =================
+    with tab2:
 
-    numeric_df = df.select_dtypes(include=np.number)
+        col1, col2 = st.columns(2)
 
-    fig, ax = plt.subplots(figsize=(10,6))
-    sns.heatmap(numeric_df.corr(), cmap="coolwarm", ax=ax)
-    st.pyplot(fig)
+        # CADD vs REVEL
+        with col1:
+            fig = px.scatter(
+                df,
+                x="cadd",
+                y="revel_max",
+                color="label",
+                title="CADD vs REVEL",
+                color_continuous_scale="viridis"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    # ---- 4. Feature Importance ----
-    st.subheader("Model Feature Importance")
+        # SIFT vs PolyPhen
+        with col2:
+            fig = px.scatter(
+                df,
+                x="sift_max",
+                y="polyphen_max",
+                color="label",
+                title="SIFT vs PolyPhen",
+                color_continuous_scale="plasma"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    try:
-        importances = model.feature_importances_
+    # ================= TAB 3 =================
+    with tab3:
 
-        features = ["Allele.Frequency", "cadd", "revel_max",
-                    "sift_max", "polyphen_max", "PPI_score"]
+        numeric_df = df.select_dtypes(include=np.number)
 
-        importance_df = pd.DataFrame({
-            "Feature": features,
-            "Importance": importances
-        }).sort_values(by="Importance", ascending=False)
+        fig = px.imshow(
+            numeric_df.corr(),
+            text_auto=True,
+            title="Correlation Heatmap",
+            color_continuous_scale="RdBu_r"
+        )
 
-        st.bar_chart(importance_df.set_index("Feature"))
+        st.plotly_chart(fig, use_container_width=True)
 
-    except:
-        st.warning("Feature importance not available")
+    # ================= TAB 4 =================
+    with tab4:
+
+        try:
+            importances = model.feature_importances_
+
+            features = [
+                "Allele.Frequency", "cadd", "revel_max",
+                "sift_max", "polyphen_max", "PPI_score"
+            ]
+
+            importance_df = pd.DataFrame({
+                "Feature": features,
+                "Importance": importances
+            }).sort_values(by="Importance", ascending=True)
+
+            fig = px.bar(
+                importance_df,
+                x="Importance",
+                y="Feature",
+                orientation='h',
+                color="Importance",
+                color_continuous_scale="viridis",
+                title="Feature Importance"
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        except:
+            st.warning("Model does not support feature importance")
 
 # ================= PREDICTION =================
-elif page == "Predict":
+elif page == "🔍 Prediction":
 
-    st.header("🔍 Variant Prediction")
+    st.markdown("## 🔍 Variant Prediction")
 
-    st.markdown("Enter variant features:")
+    col1, col2 = st.columns(2)
 
-    allele_freq = st.number_input("Allele Frequency", value=0.001)
-    cadd = st.number_input("CADD Score", value=10.0)
-    revel = st.number_input("REVEL Score", value=0.5)
-    sift = st.number_input("SIFT Score", value=0.05)
-    polyphen = st.number_input("PolyPhen Score", value=0.5)
-    ppi = st.number_input("PPI Score", value=100.0)
+    with col1:
+        allele_freq = st.number_input("Allele Frequency", value=0.001)
+        cadd = st.number_input("CADD Score", value=10.0)
+        revel = st.number_input("REVEL Score", value=0.5)
+
+    with col2:
+        sift = st.number_input("SIFT Score", value=0.05)
+        polyphen = st.number_input("PolyPhen Score", value=0.5)
+        ppi = st.number_input("PPI Score", value=100.0)
 
     if st.button("Predict"):
 
         input_data = np.array([[allele_freq, cadd, revel, sift, polyphen, ppi]])
 
-        # Probability-based prediction
         proba = model.predict_proba(input_data)[0][1]
 
         if proba > 0.5:
@@ -102,4 +169,7 @@ elif page == "Predict":
 
 # ================= FOOTER =================
 st.markdown("---")
-st.caption("Developed for Bioinformatics Project – AP-4 Variant Analysis")
+st.markdown(
+    "<center>✨ Advanced Bioinformatics Dashboard | AP-4 Variant Analysis</center>",
+    unsafe_allow_html=True
+)
